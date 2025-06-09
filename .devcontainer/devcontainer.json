@@ -1,8 +1,0 @@
-{
-  "name": "Dev Container",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
-  "postCreateCommand": "bundle install",
-  "remoteUser": "root"
-}

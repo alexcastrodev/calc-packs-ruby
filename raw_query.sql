@@ -4,36 +4,48 @@
 -- The query returns collapsed time ranges where the blocked quantity for a product remains constant.
 -- Time granularity is 15 minutes; end times are inclusive.
 
-WITH expanded_bookings AS (
-    -- Include the booking itself (pack or not)
+WITH pack_details AS (
+    -- Aggregate pack items as arrays and include the pack itself
     SELECT
-        bp.start_date       AS start_date,
-        bp.end_date         AS end_date,
-        bp.product_id,
-        bp.quantity
-    FROM booking_products bp
-
-    UNION ALL
-
-    -- If the booking references a pack, expand its items
-    SELECT
-        bp.start_date       AS start_date,
-        bp.end_date         AS end_date,
-        pi.product_id,
-        bp.quantity * pi.quantity AS quantity
-    FROM booking_products bp
-    JOIN products p       ON p.id = bp.product_id AND p.pack = true
-    JOIN pack_items pi    ON pi.pack_id = bp.product_id
+        p.id AS pack_id,
+        ARRAY[p.id] || COALESCE(array_agg(pi.product_id ORDER BY pi.id), ARRAY[]::integer[]) AS products,
+        ARRAY[1]   || COALESCE(array_agg(pi.quantity ORDER BY pi.id), ARRAY[]::integer[]) AS quantities
+    FROM products p
+    LEFT JOIN pack_items pi ON pi.pack_id = p.id
+    WHERE p.pack = true
+    GROUP BY p.id
 ),
--- Convert each booking range into "+" and "-" inventory events
+expanded_bookings AS (
+    SELECT
+        bp.start_date,
+        bp.end_date,
+        items.product_id,
+        bp.quantity * items.item_qty AS quantity
+    FROM booking_products bp
+    JOIN products p ON p.id = bp.product_id
+    LEFT JOIN pack_details pd ON pd.pack_id = bp.product_id
+    -- Expand pack bookings into individual product rows using unnest on arrays
+    JOIN LATERAL (
+        SELECT product_id, item_qty
+        FROM unnest(
+                 CASE WHEN p.pack THEN pd.products   ELSE ARRAY[p.id] END,
+                 CASE WHEN p.pack THEN pd.quantities ELSE ARRAY[1]   END
+             ) AS t(product_id, item_qty)
+    ) AS items ON TRUE
+),
 inventory_events AS (
-    SELECT product_id, start_date AS event_date, quantity AS change
-    FROM expanded_bookings
-    UNION ALL
-    SELECT product_id, (end_date + INTERVAL '15 minutes') AS event_date, -quantity
-    FROM expanded_bookings
+    -- For each booking create "+" and "-" events without using UNION ALL
+    SELECT
+        eb.product_id,
+        ev.event_date,
+        ev.change
+    FROM expanded_bookings eb
+    CROSS JOIN LATERAL (
+        VALUES
+            (eb.start_date, eb.quantity),
+            (eb.end_date + INTERVAL '15 minutes', -eb.quantity)
+    ) AS ev(event_date, change)
 ),
--- Order events and compute the running quantity for every product
 ordered_events AS (
     SELECT
         product_id,
@@ -50,13 +62,12 @@ running AS (
         LEAD(event_date) OVER (PARTITION BY product_id ORDER BY event_date) AS next_event
     FROM ordered_events
 ),
--- Derive continuous ranges where quantity does not change
 ranges AS (
     SELECT
         product_id,
-        event_date       AS start_date,
+        event_date AS start_date,
         next_event - INTERVAL '15 minutes' AS end_date,
-        total_qty        AS blocked_quantity
+        total_qty AS blocked_quantity
     FROM running
     WHERE next_event IS NOT NULL
       AND total_qty > 0

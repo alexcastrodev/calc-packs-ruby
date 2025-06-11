@@ -14,7 +14,7 @@ This project calculates busy slots for products and packs in a booking calendar 
 Suppose you have the following scenario:
 
 - A pack called "Pack for iPhone 16" contains:
-  - 3x "iPhone 16"
+  - 2x "iPhone 16"
   - 2x "Case for iPhone 16"
 - You create these bookings:
   - 2x "Pack for iPhone 16" from 2025-06-16 07:00 to 2025-07-16 07:00

@@ -1,12 +1,14 @@
-require "bundler/setup"
-require "active_record"
-require "sqlite3"
-require "minitest/autorun"
+# frozen_string_literal: true
+
+require 'bundler/setup'
+require 'active_record'
+require 'sqlite3'
+require 'minitest/autorun'
 
 # Establish an in-memory SQLite3 connection
 ActiveRecord::Base.establish_connection(
-  adapter: "sqlite3",
-  database: ":memory:"
+  adapter: 'sqlite3',
+  database: ':memory:'
 )
 
 # Define the database schema
@@ -21,7 +23,7 @@ ActiveRecord::Schema.define do
     t.integer :quantity
     t.datetime :start_date, null: false
     t.datetime :end_date, null: false
-    
+
     t.references :product, foreign_key: true
   end
 
@@ -36,4 +38,4 @@ ActiveRecord::Schema.define do
   end
 end
 
-Dir[File.join(__dir__, "../app/models/*.rb")].sort.each { |file| require file }
+Dir[File.join(__dir__, '../models/*.rb')].sort.each { |file| require file }
